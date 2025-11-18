@@ -185,13 +185,45 @@ def set_page_config():
 def main():
     set_page_config()
     
+    # Initialize session state for role and company if not exists
+    if 'role' not in st.session_state:
+        st.session_state.role = "Full Stack Developer"
+    if 'company' not in st.session_state:
+        st.session_state.company = ""
+    
     # Header with job title and company
     col1, col2 = st.columns([5, 1])
     with col1:
-        st.markdown('<div class="job-title">Full Stack Developer</div>', unsafe_allow_html=True)
-        st.markdown('<div class="company">Netflix</div>', unsafe_allow_html=True)
+        # Role input
+        st.session_state.role = st.text_input(
+            "Role", 
+            value=st.session_state.role, 
+            label_visibility="collapsed", 
+            placeholder="Enter role (e.g., Full Stack Developer)",
+            key="role_input"
+        )
+        st.markdown(f'<div class="job-title">{st.session_state.role}</div>', unsafe_allow_html=True)
+        
+        # Company input
+        st.session_state.company = st.text_input(
+            "Company", 
+            value=st.session_state.company, 
+            label_visibility="collapsed", 
+            placeholder="Enter company name (optional)",
+            key="company_input"
+        )
+        if st.session_state.company:
+            st.markdown(f'<div class="company">{st.session_state.company}</div>', unsafe_allow_html=True)
+    
+    # Logo or placeholder
     with col2:
-        st.markdown('<div class="netflix-logo">N</div>', unsafe_allow_html=True)
+        if st.session_state.company:
+            # Use first letter of company name for logo
+            logo_text = st.session_state.company[0].upper()
+            st.markdown(f'<div class="netflix-logo">{logo_text}</div>', unsafe_allow_html=True)
+        else:
+            # Default logo if no company name
+            st.markdown('<div class="netflix-logo">👔</div>', unsafe_allow_html=True)
     
     # Select Round
     st.markdown('<div class="section-title">Select Round</div>', unsafe_allow_html=True)
@@ -253,12 +285,55 @@ def main():
         </div>
     ''', unsafe_allow_html=True)
     
+    # API Key Input
+    st.markdown('### API Key')
+    st.markdown('You need a Google API key to generate interview questions. Get one from [Google AI Studio](https://aistudio.google.com/app/apikey)')
+    
+    # No API key needed anymore - using local questions
+    st.info("ℹ️ Practice with automatically generated questions")
+    
     # Action Buttons
     col1, col2 = st.columns([1, 2])
     with col1:
-        st.button("CANCEL", use_container_width=True, type="secondary")
+        if st.button("CANCEL", use_container_width=True, type="secondary"):
+            st.rerun()
     with col2:
-        st.button("START PRACTICE", type="primary", use_container_width=True)
+        if st.button("START PRACTICE", type="primary", use_container_width=True):
+            # Store the selected options in session state
+            st.session_state.start_practice = True
+            st.rerun()
+    
+    # Check if we should navigate to practice session
+    if st.session_state.get('start_practice', False):
+        # Reset the flag
+        st.session_state.start_practice = False
+        
+        # Get the selected options
+        selected_round = st.session_state.get('round_radio', 'Coding')
+        selected_difficulty = st.session_state.get('difficulty_radio', 'Professional')
+        
+        # Get role and company from session state
+        role = st.session_state.get('role', 'Software Engineer')
+        company = st.session_state.get('company', '')
+        
+        # Update query parameters for navigation
+        params = dict(st.query_params)
+        params.update({
+            "page": "practice",
+            "round": selected_round,
+            "difficulty": selected_difficulty,
+            "role": role,
+            "company": company
+        })
+        st.query_params.update(**params)
+        st.rerun()
+    
+    # Check if we should show the practice app
+    if st.query_params.get("page") == "practice":
+        # Import and run the practice app
+        from practice_app import practice_session
+        practice_session()
+        st.stop()
 
 if __name__ == "__main__":
     main()
