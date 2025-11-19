@@ -1,7 +1,9 @@
-import streamlit as st
-import time
 import os
 import random
+import time
+
+import streamlit as st
+
 from llm_utils import generate_question
 from ui_components import (
     display_question,
@@ -85,7 +87,10 @@ def practice_session():
         st.session_state.questions = []
         st.session_state.current_question_index = 0
         st.session_state.answers = {}
-    
+
+    # Resolve API key (session first, then environment)
+    api_key = st.session_state.get('google_api_key') or os.getenv('GOOGLE_API_KEY')
+
     # Generate questions if we don't have any yet
     if not st.session_state.questions:
         with st.spinner("Preparing your interview questions..."):
@@ -96,7 +101,8 @@ def practice_session():
                     company=company,
                     round_type=round_type,
                     difficulty=difficulty,
-                    previous_questions=st.session_state.questions
+                    previous_questions=st.session_state.questions,
+                    api_key=api_key
                 )
                 st.session_state.questions.append(question)
     
@@ -144,7 +150,8 @@ def practice_session():
             company=company,
             round_type=round_type,
             difficulty=difficulty,
-            previous_questions=st.session_state.questions
+            previous_questions=st.session_state.questions,
+            api_key=api_key
         )
         st.session_state.questions[st.session_state.current_question_index] = new_question
         st.rerun()
@@ -176,7 +183,8 @@ def practice_session():
                 company=company,
                 round_type=round_type,
                 difficulty=difficulty,
-                previous_questions=st.session_state.questions
+                previous_questions=st.session_state.questions,
+                api_key=api_key
             )
             st.session_state.questions[st.session_state.current_question_index] = new_question
             st.rerun()

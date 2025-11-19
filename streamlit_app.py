@@ -1,6 +1,32 @@
-import streamlit as st
 import base64
+import importlib
+import os
 from pathlib import Path
+
+import streamlit as st
+from dotenv import load_dotenv
+
+DOTENV_PATH = Path(__file__).resolve().parent / ".env"
+load_dotenv(dotenv_path=DOTENV_PATH, override=False)
+
+def get_google_api_key() -> str | None:
+    load_dotenv(dotenv_path=DOTENV_PATH, override=True)
+    key = os.getenv("GOOGLE_API_KEY")
+    if key:
+        return key.strip()
+
+    if DOTENV_PATH.exists():
+        try:
+            with open(DOTENV_PATH, encoding="utf-8") as env_file:
+                for line in env_file:
+                    if line.strip().startswith("GOOGLE_API_KEY="):
+                        _, value = line.split("=", 1)
+                        value = value.strip().strip('"').strip("'")
+                        if value:
+                            return value
+        except OSError:
+            pass
+    return None
 
 def get_base64_encoded_image(image_path):
     with open(image_path, "rb") as img_file:
@@ -187,7 +213,7 @@ def main():
     
     # Initialize session state for role and company if not exists
     if 'role' not in st.session_state:
-        st.session_state.role = "Full Stack Developer"
+        st.session_state.role = ""
     if 'company' not in st.session_state:
         st.session_state.company = ""
     
@@ -215,16 +241,6 @@ def main():
         if st.session_state.company:
             st.markdown(f'<div class="company">{st.session_state.company}</div>', unsafe_allow_html=True)
     
-    # Logo or placeholder
-    with col2:
-        if st.session_state.company:
-            # Use first letter of company name for logo
-            logo_text = st.session_state.company[0].upper()
-            st.markdown(f'<div class="netflix-logo">{logo_text}</div>', unsafe_allow_html=True)
-        else:
-            # Default logo if no company name
-            st.markdown('<div class="netflix-logo">👔</div>', unsafe_allow_html=True)
-    
     # Select Round
     st.markdown('<div class="section-title">Select Round</div>', unsafe_allow_html=True)
     rounds = ["Warm Up", "Coding", "Role Related", "Behavioral"]
@@ -247,58 +263,45 @@ def main():
                                  horizontal=True, 
                                  label_visibility="collapsed")
     
-    # Select Your Interviewer
-    st.markdown('<div class="section-title">Select Your Interviewer</div>', unsafe_allow_html=True)
-    interviewers = [
-        {"name": "Lisa", "emoji": "👩‍💼", "selected": True},
-        {"name": "Mike", "emoji": "👨‍💼", "selected": False},
-        {"name": "Jyoti", "emoji": "👩‍💼", "selected": False},
-        {"name": "John", "emoji": "👨‍💼", "selected": False}
-    ]
-    
-    # Create a row of interviewer avatars
-    cols = st.columns(len(interviewers))
-    for idx, interviewer in enumerate(interviewers):
-        with cols[idx]:
-            st.markdown(f'''
-                <div class="interviewer">
-                    <div class="interviewer-avatar">
-                        <div style="font-size: 30px;">{interviewer['emoji']}</div>
-                    </div>
-                    <div class="interviewer-name">{interviewer['name']}</div>
-                </div>
-            ''', unsafe_allow_html=True)
-    
     # Practice Settings
     st.markdown('<div class="section-title">Practice Settings</div>', unsafe_allow_html=True)
-    col1, col2 = st.columns(2)
+    col1, = st.columns(1)
     with col1:
         audio = st.checkbox("Audio", value=True, key="audio_checkbox")
-    with col2:
-        video = st.checkbox("Video", value=True, key="video_checkbox")
     
-    # Terms and Conditions
-    st.markdown('''
-        <div class="terms">
-            <input type="checkbox" id="terms" name="terms" checked>
-            <label for="terms">I agree with the <a href="#">terms and conditions</a>.</label>
-        </div>
-    ''', unsafe_allow_html=True)
-    
-    # API Key Input
-    st.markdown('### API Key')
-    st.markdown('You need a Google API key to generate interview questions. Get one from [Google AI Studio](https://aistudio.google.com/app/apikey)')
+    api_key = get_google_api_key()
+    if api_key:
+        st.success("API key loaded from environment (.env file or shell). You're ready to call external services.")
+        st.session_state.google_api_key = api_key
+    else:
+        # Only show API key instructions when a key isn't available yet
+        st.markdown('### API Key')
+        st.markdown('You need a Google API key to generate interview questions. Get one from [Google AI Studio](https://aistudio.google.com/app/apikey)')
+        st.error("No API key detected. Create a .env file with GOOGLE_API_KEY=your-key, then restart the app.")
     
     # No API key needed anymore - using local questions
     st.info("ℹ️ Practice with automatically generated questions")
     
+    role_provided = bool(st.session_state.role.strip())
+    api_key_available = bool(api_key)
+
     # Action Buttons
     col1, col2 = st.columns([1, 2])
     with col1:
         if st.button("CANCEL", use_container_width=True, type="secondary"):
             st.rerun()
     with col2:
-        if st.button("START PRACTICE", type="primary", use_container_width=True):
+        if not role_provided:
+            st.warning("Enter a position title before starting your practice session.")
+        if role_provided and not api_key_available:
+            st.warning("Add GOOGLE_API_KEY to .env and restart before generating questions.")
+        start_clicked = st.button(
+            "START PRACTICE",
+            type="primary",
+            use_container_width=True,
+            disabled=not role_provided or not api_key_available
+        )
+        if start_clicked and role_provided and api_key_available:
             # Store the selected options in session state
             st.session_state.start_practice = True
             st.rerun()
@@ -330,9 +333,10 @@ def main():
     
     # Check if we should show the practice app
     if st.query_params.get("page") == "practice":
-        # Import and run the practice app
-        from practice_app import practice_session
-        practice_session()
+        # Reload and run the practice app to reflect latest UI changes
+        import practice_app
+        importlib.reload(practice_app)
+        practice_app.practice_session()
         st.stop()
 
 if __name__ == "__main__":
