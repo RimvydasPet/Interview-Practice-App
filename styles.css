@@ -107,6 +107,10 @@
     border-radius: 8px;
     cursor: pointer;
     transition: all 0.2s;
+    white-space: nowrap;
+}
+.stRadio > div > label span {
+    white-space: nowrap;
 }
 .stRadio > div > label[data-testid="stRadio"] {
     margin: 0;
@@ -128,6 +132,10 @@
     text-align: center;
     cursor: pointer;
     transition: all 0.2s;
+    white-space: nowrap;
+}
+.stRadio > div > div[role="radiogroup"] > label span {
+    white-space: nowrap;
 }
 .stRadio > div > div[role="radiogroup"] > label[data-state="selected"] {
     background: #6C63FF;
@@ -161,4 +169,19 @@
     background: #6C63FF;
     color: white;
     border: none;
+}
+.action-row {
+    display: flex;
+    gap: 20px;
+    align-items: center;
+}
+.inline-warning {
+    margin-top: 10px;
+    padding: 8px 12px;
+    border: 1px solid #F4B400;
+    background: #FFF8E1;
+    color: #A15C00;
+    border-radius: 6px;
+    font-size: 14px;
+    white-space: nowrap;
 }

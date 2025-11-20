@@ -6,9 +6,23 @@ import google.generativeai as genai
 DEFAULT_GEMINI_MODEL = "gemini-2.5-flash"
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", DEFAULT_GEMINI_MODEL)
 
+
+def validate_google_api_key(api_key: str) -> None:
+    """Raise if the provided API key fails a lightweight validation call."""
+    if not api_key or not api_key.strip():
+        raise ValueError("GOOGLE_API_KEY missing. Provide it via .env before generating questions.")
+
+    try:
+        genai.configure(api_key=api_key)
+        model = genai.GenerativeModel(model_name=GEMINI_MODEL)
+        model.count_tokens("ping")
+    except Exception as exc:  # noqa: BLE001
+        raise RuntimeError(f"GOOGLE_API_KEY validation failed: {exc}") from exc
+
+
 def generate_question(role: str, company: str, round_type: str, difficulty: str,
                      previous_questions: Optional[list] = None, api_key: str | None = None) -> str:
-  
+
     if not api_key:
         raise ValueError("GOOGLE_API_KEY missing. Provide it via .env before generating questions.")
 

@@ -1,10 +1,12 @@
 import base64
-import importlib
 import os
 from pathlib import Path
 
 import streamlit as st
 from dotenv import load_dotenv
+
+from interview_flow import handle_practice_navigation
+from llm_utils import validate_google_api_key
 
 DOTENV_PATH = Path(__file__).resolve().parent / ".env"
 load_dotenv(dotenv_path=DOTENV_PATH, override=False)
@@ -85,10 +87,20 @@ def main():
     
     # Select Round
     st.markdown('<div class="section-title">Select Round</div>', unsafe_allow_html=True)
-    rounds = ["Warm Up", "Coding", "Role Related", "Behavioral"]
+    role_text = st.session_state.role.lower()
+    coding_keywords = ["developer", "engineer", "coder", "coding", "programmer", "software"]
+    coding_round_enabled = any(keyword in role_text for keyword in coding_keywords)
+
+    if coding_round_enabled:
+        rounds = ["Warm Up", "Coding", "Role Related", "Behavioral"]
+    else:
+        st.info("The Coding round is unavailable for non-coding roles. Enter a developer/coding role to enable it.")
+        rounds = ["Warm Up", "Role Related", "Behavioral"]
+        if st.session_state.get("round_radio") == "Coding":
+            st.session_state.round_radio = "Warm Up"
     selected_round = st.radio("Select Round", 
                             options=rounds, 
-                            index=1, 
+                            index=0 if st.session_state.get("round_radio") not in rounds else rounds.index(st.session_state.round_radio), 
                             format_func=lambda x: x, 
                             key="round_radio", 
                             horizontal=True, 
@@ -111,10 +123,20 @@ def main():
     with col1:
         audio = st.checkbox("Audio", value=True, key="audio_checkbox")
     
+    api_key_validation_error: str | None = None
     api_key = get_google_api_key()
     if api_key:
-        st.success("API key loaded from environment (.env file or shell). You're ready to call external services.")
-        st.session_state.google_api_key = api_key
+        cached_key = st.session_state.get("validated_api_key")
+        try:
+            if cached_key != api_key:
+                validate_google_api_key(api_key)
+                st.session_state.validated_api_key = api_key
+            st.success("API key loaded from environment (.env file or shell). You're ready to call external services.")
+            st.session_state.google_api_key = api_key
+        except Exception as exc:  # noqa: BLE001
+            api_key_validation_error = str(exc)
+            api_key = None
+            st.error(f"Invalid API key: {api_key_validation_error}")
     else:
         # Only show API key instructions when a key isn't available yet
         st.markdown('### API Key')
@@ -128,58 +150,37 @@ def main():
     api_key_available = bool(api_key)
 
     # Action Buttons
-    col1, col2 = st.columns([1, 2])
-    with col1:
-        if st.button("CANCEL", use_container_width=True, type="secondary"):
-            st.rerun()
-    with col2:
+    warning_messages: list[str] = []
+    start_clicked = False
+    with st.container():
+        st.markdown('<div class="action-row">', unsafe_allow_html=True)
+        col1, col2 = st.columns([1, 2])
+        with col1:
+            if st.button("CANCEL", use_container_width=True, type="secondary"):
+                st.rerun()
+        with col2:
+            start_clicked = st.button(
+                "START PRACTICE",
+                type="primary",
+                use_container_width=True
+            )
+        st.markdown('</div>', unsafe_allow_html=True)
+
+    if start_clicked:
         if not role_provided:
-            st.warning("Enter a position title before starting your practice session.")
+            warning_messages.append("Enter a position title before starting your practice session.")
         if role_provided and not api_key_available:
-            st.warning("Add GOOGLE_API_KEY to .env and restart before generating questions.")
-        start_clicked = st.button(
-            "START PRACTICE",
-            type="primary",
-            use_container_width=True,
-            disabled=not role_provided or not api_key_available
-        )
-        if start_clicked and role_provided and api_key_available:
-            # Store the selected options in session state
+            warning_messages.append("Add a valid GOOGLE_API_KEY to .env and restart before generating questions.")
+        if role_provided and api_key_validation_error:
+            warning_messages.append("Your Google API key appears invalid. Update it in .env and restart before generating questions.")
+        if role_provided and api_key_available:
             st.session_state.start_practice = True
             st.rerun()
+
+    for message in warning_messages:
+        st.markdown(f'<div class="inline-warning">{message}</div>', unsafe_allow_html=True)
     
-    # Check if we should navigate to practice session
-    if st.session_state.get('start_practice', False):
-        # Reset the flag
-        st.session_state.start_practice = False
-        
-        # Get the selected options
-        selected_round = st.session_state.get('round_radio', 'Coding')
-        selected_difficulty = st.session_state.get('difficulty_radio', 'Professional')
-        
-        # Get role and company from session state
-        role = st.session_state.get('role', 'Software Engineer')
-        company = st.session_state.get('company', '')
-        
-        # Update query parameters for navigation
-        params = dict(st.query_params)
-        params.update({
-            "page": "practice",
-            "round": selected_round,
-            "difficulty": selected_difficulty,
-            "role": role,
-            "company": company
-        })
-        st.query_params.update(**params)
-        st.rerun()
-    
-    # Check if we should show the practice app
-    if st.query_params.get("page") == "practice":
-        # Reload and run the practice app to reflect latest UI changes
-        import practice_app
-        importlib.reload(practice_app)
-        practice_app.practice_session()
-        st.stop()
+    handle_practice_navigation()
 
 if __name__ == "__main__":
     main()
