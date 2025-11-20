@@ -1,14 +1,7 @@
 import streamlit as st
 
 def display_question(question: str, current_index: int, total_questions: int) -> None:
-    """
-    Display the current question with proper formatting.
-    
-    Args:
-        question: The question text to display
-        current_index: Current question index (0-based)
-        total_questions: Total number of questions
-    """
+
     # Display question counter and current question
     st.markdown(f"**Question {current_index + 1} of {total_questions}**")
     
@@ -20,16 +13,7 @@ def display_question(question: str, current_index: int, total_questions: int) ->
     )
 
 def display_response_area(question_index: int, current_answer: str = "") -> str:
-    """
-    Display the response text area for the current question.
-    
-    Args:
-        question_index: Index of the current question
-        current_answer: Current answer text (if any)
-        
-    Returns:
-        The user's response
-    """
+
     st.markdown("### Your Response")
     response = st.text_area(
         "Type your answer here...",
@@ -41,16 +25,7 @@ def display_response_area(question_index: int, current_answer: str = "") -> str:
     return response
 
 def display_navigation_buttons(current_index: int, total_questions: int) -> tuple[bool, bool, bool, bool]:
-    """
-    Display navigation buttons and return their states.
-    
-    Args:
-        current_index: Current question index
-        total_questions: Total number of questions
-        
-    Returns:
-        Tuple of (prev_clicked, next_clicked, new_question_clicked, finish_clicked)
-    """
+   
     col1, col2, col3 = st.columns([1, 1, 2])
     prev_clicked = next_clicked = new_question_clicked = finish_clicked = False
     

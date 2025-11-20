@@ -12,12 +12,13 @@ from ui_components import (
     display_interview_summary
 )
 
-def practice_session():
-    st.set_page_config(
-        page_title="Practice Session",
-        page_icon="🎤",
-        layout="centered"
-    )
+def practice_session(standalone: bool = True):
+    if standalone:
+        st.set_page_config(
+            page_title="Practice Session",
+            page_icon="🎤",
+            layout="centered"
+        )
     
     st.markdown("""
         <style>
@@ -66,16 +67,6 @@ def practice_session():
         st.title("Practice Session")
         st.caption(f"{round_type} • {difficulty} Level")
     
-    # Initialize timer
-    if 'start_time' not in st.session_state:
-        st.session_state.start_time = time.time()
-    
-    # Calculate elapsed time
-    elapsed = int(time.time() - st.session_state.start_time)
-    minutes = elapsed // 60
-    seconds = elapsed % 60
-    st.markdown(f'<div class="timer">⏱️ {minutes:02d}:{seconds:02d}</div>', unsafe_allow_html=True)
-    
     # Get parameters from query or use defaults
     role = st.query_params.get("role", "Software Engineer")
     company = st.query_params.get("company", "a tech company")
@@ -105,6 +96,24 @@ def practice_session():
                     api_key=api_key
                 )
                 st.session_state.questions.append(question)
+        # Start timer once questions are ready
+        st.session_state.start_time = time.time()
+    elif 'start_time' not in st.session_state:
+        st.session_state.start_time = time.time()
+
+    difficulty_key = difficulty.lower()
+    total_duration_seconds = 180 if difficulty_key == "beginner" else 300
+    elapsed = max(0, int(time.time() - st.session_state.start_time))
+    elapsed = min(elapsed, total_duration_seconds)
+    remaining = total_duration_seconds - elapsed
+    remaining_minutes = remaining // 60
+    remaining_seconds = remaining % 60
+
+    progress_value = elapsed / total_duration_seconds if total_duration_seconds else 0
+    st.progress(
+        progress_value,
+        text=f"⏱️ Time remaining {remaining_minutes:02d}:{remaining_seconds:02d}",
+    )
     
     # Get current question
     current_question = st.session_state.questions[st.session_state.current_question_index] if st.session_state.questions else "No questions available"
@@ -143,51 +152,9 @@ def practice_session():
     elif next_clicked:
         st.session_state.current_question_index += 1
         st.rerun()
-    elif new_question_clicked:
-        # Generate a new question for this position
-        new_question = generate_question(
-            role=role,
-            company=company,
-            round_type=round_type,
-            difficulty=difficulty,
-            previous_questions=st.session_state.questions,
-            api_key=api_key
-        )
-        st.session_state.questions[st.session_state.current_question_index] = new_question
-        st.rerun()
     elif finish_clicked:
         st.session_state.finished = True
         st.rerun()
-    
-    # Timer and action buttons
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        if st.button("⏸️ Pause" if not st.session_state.get('paused', False) else "▶️ Resume", 
-                    use_container_width=True, key="pause_resume_btn"):
-            st.session_state.paused = not st.session_state.get('paused', False)
-            if not st.session_state.paused:
-                st.session_state.start_time = time.time() - st.session_state.get('pause_duration', 0)
-                st.rerun()
-    with col2:
-        if st.button("🔄 Restart Question", use_container_width=True, key="restart_question_btn"):
-            if 'answers' in st.session_state:
-                st.session_state.answers[st.session_state.current_question_index] = ""
-                # Clear the input widget by using a temporary key
-                st.session_state[f"answer_input_{st.session_state.current_question_index}"] = ""
-            st.rerun()
-    with col3:
-        if st.button("🔀 New Question", use_container_width=True, key="new_question_btn"):
-            # Generate a new question for this position
-            new_question = generate_question(
-                role=role,
-                company=company,
-                round_type=round_type,
-                difficulty=difficulty,
-                previous_questions=st.session_state.questions,
-                api_key=api_key
-            )
-            st.session_state.questions[st.session_state.current_question_index] = new_question
-            st.rerun()
     
     # Feedback section (shown after finishing)
     if st.session_state.get('finished', False):
@@ -253,6 +220,10 @@ def practice_session():
                 st.query_params.clear()
                 st.session_state.clear()
                 st.rerun()
+
+    if remaining > 0 and not st.session_state.get('finished', False):
+        time.sleep(1)
+        st.rerun()
 
 if __name__ == "__main__":
     practice_session()

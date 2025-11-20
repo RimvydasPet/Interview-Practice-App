@@ -1,10 +1,8 @@
-import importlib
-
 import streamlit as st
 
 
-def handle_practice_navigation() -> None:
-    """Handle transition from setup screen to practice session."""
+def handle_practice_navigation() -> bool:
+    """Update query params when practice starts and report whether practice mode is active."""
     if st.session_state.get("start_practice", False):
         st.session_state.start_practice = False
 
@@ -26,9 +24,4 @@ def handle_practice_navigation() -> None:
         st.query_params.update(**params)
         st.rerun()
 
-    if st.query_params.get("page") == "practice":
-        import practice_app
-
-        importlib.reload(practice_app)
-        practice_app.practice_session()
-        st.stop()
+    return st.query_params.get("page") == "practice"
