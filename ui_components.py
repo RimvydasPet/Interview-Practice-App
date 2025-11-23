@@ -12,7 +12,7 @@ def display_question(question: str, current_index: int, total_questions: int) ->
         unsafe_allow_html=True
     )
 
-def display_response_area(question_index: int, current_answer: str = "") -> str:
+def display_response_area(question_index: int, current_answer: str = "", *, disabled: bool = False) -> str:
 
     st.markdown("### Your Response")
     response = st.text_area(
@@ -20,7 +20,8 @@ def display_response_area(question_index: int, current_answer: str = "") -> str:
         value=current_answer,
         height=200,
         key=f"answer_input_{question_index}",
-        label_visibility="collapsed"
+        label_visibility="collapsed",
+        disabled=disabled
     )
     return response
 

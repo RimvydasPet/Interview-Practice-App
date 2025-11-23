@@ -1,8 +1,8 @@
 import os
-import random
 import time
 
 import streamlit as st
+import streamlit.components.v1 as components
 
 from llm_utils import generate_question
 from ui_components import (
@@ -78,6 +78,8 @@ def practice_session(standalone: bool = True):
         st.session_state.questions = []
         st.session_state.current_question_index = 0
         st.session_state.answers = {}
+        st.session_state.question_timers = {}
+        st.session_state.question_locked = {}
 
     # Resolve API key (session first, then environment)
     api_key = st.session_state.get('google_api_key') or os.getenv('GOOGLE_API_KEY')
@@ -96,25 +98,120 @@ def practice_session(standalone: bool = True):
                     api_key=api_key
                 )
                 st.session_state.questions.append(question)
-        # Start timer once questions are ready
-        st.session_state.start_time = time.time()
-    elif 'start_time' not in st.session_state:
-        st.session_state.start_time = time.time()
+        st.session_state.question_timers = {}
 
+    round_key = round_type.lower()
     difficulty_key = difficulty.lower()
-    total_duration_seconds = 180 if difficulty_key == "beginner" else 300
-    elapsed = max(0, int(time.time() - st.session_state.start_time))
-    elapsed = min(elapsed, total_duration_seconds)
-    remaining = total_duration_seconds - elapsed
-    remaining_minutes = remaining // 60
-    remaining_seconds = remaining % 60
+    # Coding practice gets a dedicated 15-minute timer, all other rounds reuse the
+    # legacy durations (Beginner → 3 min, Professional → 5 min).
+    if round_key == "coding":
+        per_question_seconds = 15 * 60
+    else:
+        per_question_seconds_map = {
+            "beginner": 3 * 60,
+            "professional": 5 * 60,
+        }
+        per_question_seconds = per_question_seconds_map.get(difficulty_key, 5 * 60)
 
-    progress_value = elapsed / total_duration_seconds if total_duration_seconds else 0
-    st.progress(
-        progress_value,
-        text=f"⏱️ Time remaining {remaining_minutes:02d}:{remaining_seconds:02d}",
-    )
-    
+    interview_finished = st.session_state.get('finished', False)
+    if interview_finished:
+        st.markdown(
+            """
+            <div style="
+                display:flex;
+                flex-direction:column;
+                gap:4px;
+                align-items:center;
+                justify-content:center;
+                padding:12px 16px;
+                border:1px solid #e5e7eb;
+                border-radius:10px;
+                background:#fff;
+                box-shadow:0 3px 8px rgba(0,0,0,0.05);
+                font-family:'Source Sans Pro', 'Segoe UI', system-ui;
+            ">
+                <span style="font-size:0.9rem;color:#6b7280;">Status</span>
+                <div style="font-size:1.1rem;font-weight:600;color:#10b981;">
+                    Interview is ended
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+    else:
+        current_index = st.session_state.current_question_index
+        if 'question_timers' not in st.session_state:
+            st.session_state.question_timers = {}
+        if 'question_locked' not in st.session_state:
+            st.session_state.question_locked = {}
+        if current_index not in st.session_state.question_timers:
+            st.session_state.question_timers[current_index] = time.time()
+
+        question_start_time = st.session_state.question_timers[current_index]
+        elapsed = max(0, int(time.time() - question_start_time))
+        elapsed = min(elapsed, per_question_seconds)
+        remaining = per_question_seconds - elapsed
+        remaining_minutes = remaining // 60
+        remaining_seconds = remaining % 60
+
+        timer_dom_id = f"countdown-watch-{current_index}-{int(question_start_time)}"
+        timer_html = f"""
+        <div id=\"{timer_dom_id}\" style=\"
+            display:flex;
+            flex-direction:column;
+            gap:4px;
+            align-items:center;
+            justify-content:center;
+            padding:12px 16px;
+            border:1px solid #e5e7eb;
+            border-radius:10px;
+            background:#fff;
+            box-shadow:0 3px 8px rgba(0,0,0,0.05);
+            font-family:'Source Sans Pro', 'Segoe UI', system-ui;
+        \">
+            <span style=\"font-size:0.9rem;color:#6b7280;\">Question Countdown</span>
+            <div class=\"timer-watch__value\" style=\"font-size:1.8rem;font-weight:700;color:#6C63FF;\">
+                {remaining_minutes:02d}:{remaining_seconds:02d}
+            </div>
+        </div>
+        {"" if remaining <= 0 else f"""<script>
+        (function() {{
+            const container = document.getElementById('{timer_dom_id}');
+            if (!container) return;
+            const valueEl = container.querySelector('.timer-watch__value');
+            let remaining = {remaining};
+            const pad = (val) => String(val).padStart(2, '0');
+            const render = () => {{
+                const mins = pad(Math.floor(remaining / 60));
+                const secs = pad(remaining % 60);
+                valueEl.textContent = `${{mins}}:${{secs}}`;
+            }};
+            const notifyLock = () => {{
+                if (window.parent) {{
+                    window.parent.postMessage({{type: 'timer-lock', index: {current_index}}}, '*');
+                    window.parent.postMessage({{type: 'streamlit:rerun'}}, '*');
+                }} else {{
+                    window.postMessage({{type: 'timer-lock', index: {current_index}}}, '*');
+                    window.postMessage({{type: 'streamlit:rerun'}}, '*');
+                }}
+            }};
+            render();
+            const interval = setInterval(() => {{
+                remaining = Math.max(remaining - 1, 0);
+                render();
+                if (remaining === 0) {{
+                    clearInterval(interval);
+                    notifyLock();
+                }}
+            }}, 1000);
+        }})();
+        </script>"""}
+        """
+        components.html(timer_html, height=110, scrolling=False)
+        if remaining == 0:
+            st.session_state.question_locked[current_index] = True
+            st.warning("Time's up for this question. Move to the next one when you're ready.")
+
     # Get current question
     current_question = st.session_state.questions[st.session_state.current_question_index] if st.session_state.questions else "No questions available"
     
@@ -133,7 +230,45 @@ def practice_session(standalone: bool = True):
     current_answer = st.session_state.answers.get(st.session_state.current_question_index, "")
     
     # Display response area and get user input
-    user_response = display_response_area(st.session_state.current_question_index, current_answer)
+    current_locked = st.session_state.question_locked.get(st.session_state.current_question_index, False)
+    response_container_id = f"response-area-{st.session_state.current_question_index}"
+    with st.container():
+        st.markdown(f'<div id="{response_container_id}">', unsafe_allow_html=True)
+        user_response = display_response_area(
+            st.session_state.current_question_index,
+            current_answer,
+            disabled=current_locked,
+        )
+        st.markdown('</div>', unsafe_allow_html=True)
+    st.markdown(
+        f"""
+        <script>
+        (function() {{
+            const container = document.getElementById('{response_container_id}');
+            if (!container) return;
+            const textarea = container.querySelector('textarea');
+            const lockTextarea = () => {{
+                if (!textarea) return;
+                textarea.setAttribute('readonly', 'true');
+                textarea.setAttribute('disabled', 'true');
+                textarea.classList.add('response-locked');
+                textarea.blur();
+            }};
+            if ({1 if current_locked else 0}) {{
+                lockTextarea();
+            }}
+            window.addEventListener('message', (event) => {{
+                if (event?.data?.type === 'timer-lock' && event.data.index === {st.session_state.current_question_index}) {{
+                    lockTextarea();
+                }}
+            }});
+        }})();
+        </script>
+        """,
+        unsafe_allow_html=True,
+    )
+    if current_locked:
+        st.info("✋ Time is up for this question. Use navigation to move on.")
     
     # Update answer in session state
     if user_response != current_answer:
@@ -180,8 +315,8 @@ def practice_session(standalone: bool = True):
         # Role-specific feedback
         role_specific = {
             "software engineer": [
-                "� Great job on the technical questions!",
-                "� Consider discussing your problem-solving process in more detail.",
+                "💻 Great job on the technical questions!",
+                "💡 Consider discussing your problem-solving process in more detail.",
                 "📚 Keep practicing coding challenges to improve your speed and accuracy."
             ],
             "data scientist": [
@@ -210,7 +345,7 @@ def practice_session(standalone: bool = True):
         col1, col2 = st.columns(2)
         with col1:
             if st.button("🔄 Start New Interview", use_container_width=True):
-                all_keys = (['start_time', 'paused', 'finished', 'questions', 'current_question_index'] +
+                all_keys = (['paused', 'finished', 'questions', 'current_question_index', 'question_timers', 'question_locked'] +
                           [f"answer_{i}" for i in range(10)])
                 for key in all_keys:
                     st.session_state.pop(key, None)
@@ -220,10 +355,6 @@ def practice_session(standalone: bool = True):
                 st.query_params.clear()
                 st.session_state.clear()
                 st.rerun()
-
-    if remaining > 0 and not st.session_state.get('finished', False):
-        time.sleep(1)
-        st.rerun()
 
 if __name__ == "__main__":
     practice_session()
