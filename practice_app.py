@@ -5,6 +5,7 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 from llm_utils import generate_question
+from audio_input import render_audio_input_panel
 from ui_components import (
     display_question,
     display_response_area,
@@ -72,6 +73,12 @@ def practice_session(standalone: bool = True):
     company = st.query_params.get("company", "a tech company")
     round_type = st.query_params.get("round", "Coding")
     difficulty = st.query_params.get("difficulty", "Professional")
+    audio_required = round_type.lower() == "coding"
+    if "audio_checkbox" not in st.session_state:
+        default_audio = st.session_state.get("audio_mode_enabled")
+        if default_audio is None:
+            default_audio = True if audio_required else False
+        st.session_state.audio_checkbox = bool(default_audio)
     
     # Initialize questions and answers if not exists
     if 'questions' not in st.session_state:
@@ -115,6 +122,8 @@ def practice_session(standalone: bool = True):
 
     interview_finished = st.session_state.get('finished', False)
     if interview_finished:
+        st.session_state.audio_mode_enabled = False
+        st.session_state.audio_checkbox = False
         st.markdown(
             """
             <div style="
@@ -138,6 +147,71 @@ def practice_session(standalone: bool = True):
             """,
             unsafe_allow_html=True,
         )
+
+        display_interview_summary(st.session_state.questions, st.session_state.answers)
+
+        role = st.query_params.get("role", "Software Engineer").lower()
+        st.write("### Overall Feedback")
+        response_lengths = [len(st.session_state.answers.get(i, "")) for i in range(len(st.session_state.questions))]
+        avg_response_length = sum(response_lengths) / len(response_lengths) if response_lengths else 0
+        feedback = ["✅ You completed all the interview questions!"]
+        if avg_response_length < 100:
+            feedback.append("🔧 Consider providing more detailed answers with specific examples.")
+        role_specific = {
+            "software engineer": [
+                "💻 Great job on the technical questions!",
+                "💡 Consider discussing your problem-solving process in more detail.",
+                "📚 Keep practicing coding challenges to improve your speed and accuracy.",
+            ],
+            "data scientist": [
+                "📊 Good work on the data analysis questions!",
+                "🧠 Consider discussing more about your approach to data cleaning and feature engineering.",
+                "📈 Practice explaining complex statistical concepts in simple terms.",
+            ],
+            "product manager": [
+                "🎯 Good job on the product thinking questions!",
+                "🤝 Consider discussing more about stakeholder management.",
+                "📝 Practice creating clear and concise product requirements.",
+            ],
+        }
+        feedback.extend(
+            role_specific.get(
+                role,
+                [
+                    "😎 You're doing great!",
+                    "📚 Keep practicing to improve your interview skills.",
+                ],
+            )
+        )
+        for item in feedback:
+            st.write(f"- {item}")
+
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("🔄 Start New Interview", use_container_width=True):
+                all_keys = (
+                    [
+                        'paused',
+                        'finished',
+                        'questions',
+                        'current_question_index',
+                        'question_timers',
+                        'question_locked',
+                        'audio_mode_enabled',
+                        'audio_checkbox',
+                    ]
+                    + [f"answer_{i}" for i in range(10)]
+                )
+                for key in all_keys:
+                    st.session_state.pop(key, None)
+                st.rerun()
+        with col2:
+            if st.button("🏠 Back to Setup", use_container_width=True):
+                st.query_params.clear()
+                st.session_state.clear()
+                st.rerun()
+
+        return
     else:
         current_index = st.session_state.current_question_index
         if 'question_timers' not in st.session_state:
@@ -240,6 +314,25 @@ def practice_session(standalone: bool = True):
             disabled=current_locked,
         )
         st.markdown('</div>', unsafe_allow_html=True)
+
+    audio_enabled = bool(
+        st.session_state.get(
+            "audio_mode_enabled",
+            st.session_state.get("audio_checkbox", True if audio_required else False),
+        )
+    )
+    audio_only_mode = audio_enabled
+    if audio_enabled and not current_locked:
+        render_audio_input_panel(
+            response_container_id,
+            title="Prefer speaking? We'll transcribe in real time",
+            initial_text=user_response,
+        )
+    elif audio_enabled and current_locked:
+        st.info("🎧 Audio capture disabled because this question is locked. Use navigation to continue.")
+    if audio_only_mode and not current_locked:
+        st.info("🎙️ Audio mode is enabled. Answers are captured from your microphone only.")
+
     st.markdown(
         f"""
         <script>
@@ -247,19 +340,43 @@ def practice_session(standalone: bool = True):
             const container = document.getElementById('{response_container_id}');
             if (!container) return;
             const textarea = container.querySelector('textarea');
+            let isLocked = Boolean({1 if current_locked else 0});
+            const audioOnly = Boolean({1 if audio_only_mode else 0});
+            const syncValue = (value) => {{
+                if (!textarea) return;
+                textarea.value = value || '';
+                textarea.dispatchEvent(new Event('input', {{ bubbles: true }}));
+            }};
             const lockTextarea = () => {{
                 if (!textarea) return;
+                isLocked = true;
                 textarea.setAttribute('readonly', 'true');
                 textarea.setAttribute('disabled', 'true');
                 textarea.classList.add('response-locked');
                 textarea.blur();
             }};
-            if ({1 if current_locked else 0}) {{
+            const enforceAudioOnly = () => {{
+                if (!textarea || isLocked) return;
+                if (audioOnly) {{
+                    textarea.setAttribute('readonly', 'true');
+                    textarea.classList.add('response-audio-only');
+                }} else {{
+                    textarea.removeAttribute('readonly');
+                    textarea.classList.remove('response-audio-only');
+                }}
+            }};
+            if (isLocked) {{
                 lockTextarea();
+            }} else {{
+                enforceAudioOnly();
             }}
             window.addEventListener('message', (event) => {{
                 if (event?.data?.type === 'timer-lock' && event.data.index === {st.session_state.current_question_index}) {{
                     lockTextarea();
+                }}
+                if (event?.data?.type === 'audio-transcript' && event.data.targetId === '{response_container_id}') {{
+                    syncValue(event.data.value || '');
+                    enforceAudioOnly();
                 }}
             }});
         }})();
@@ -289,72 +406,9 @@ def practice_session(standalone: bool = True):
         st.rerun()
     elif finish_clicked:
         st.session_state.finished = True
+        st.session_state.audio_mode_enabled = False
+        st.session_state.audio_checkbox = False
         st.rerun()
-    
-    # Feedback section (shown after finishing)
-    if st.session_state.get('finished', False):
-        # Display interview summary
-        display_interview_summary(st.session_state.questions, st.session_state.answers)
-        
-        # Role-specific feedback
-        role = st.query_params.get("role", "Software Engineer").lower()
-        
-        # Generate feedback based on answers
-        st.write("### Overall Feedback")
-        
-        # Analyze responses
-        response_lengths = [len(st.session_state.answers.get(i, "")) for i in range(len(st.session_state.questions))]
-        avg_response_length = sum(response_lengths) / len(response_lengths) if response_lengths else 0
-        
-        # General feedback
-        feedback = ["✅ You completed all the interview questions!"]
-        
-        if avg_response_length < 100:
-            feedback.append("🔧 Consider providing more detailed answers with specific examples.")
-        
-        # Role-specific feedback
-        role_specific = {
-            "software engineer": [
-                "💻 Great job on the technical questions!",
-                "💡 Consider discussing your problem-solving process in more detail.",
-                "📚 Keep practicing coding challenges to improve your speed and accuracy."
-            ],
-            "data scientist": [
-                "📊 Good work on the data analysis questions!",
-                "🧠 Consider discussing more about your approach to data cleaning and feature engineering.",
-                "📈 Practice explaining complex statistical concepts in simple terms."
-            ],
-            "product manager": [
-                "🎯 Good job on the product thinking questions!",
-                "🤝 Consider discussing more about stakeholder management.",
-                "📝 Practice creating clear and concise product requirements."
-            ]
-        }
-        
-        # Add role-specific feedback
-        feedback.extend(role_specific.get(role, [
-            "� You're doing great!",
-            "� Keep practicing to improve your interview skills."
-        ]))
-        
-        # Display all feedback
-        for item in feedback:
-            st.write(f"- {item}")
-        
-        # Action buttons
-        col1, col2 = st.columns(2)
-        with col1:
-            if st.button("🔄 Start New Interview", use_container_width=True):
-                all_keys = (['paused', 'finished', 'questions', 'current_question_index', 'question_timers', 'question_locked'] +
-                          [f"answer_{i}" for i in range(10)])
-                for key in all_keys:
-                    st.session_state.pop(key, None)
-                st.rerun()
-        with col2:
-            if st.button("🏠 Back to Setup", use_container_width=True):
-                st.query_params.clear()
-                st.session_state.clear()
-                st.rerun()
 
 if __name__ == "__main__":
     practice_session()

@@ -131,7 +131,22 @@ def main():
         st.markdown('<div class="section-title">Practice Settings</div>', unsafe_allow_html=True)
         col1, = st.columns(1)
         with col1:
-            st.checkbox("Audio", value=True, key="audio_checkbox")
+            selected_round = st.session_state.get("round_radio", "Warm Up")
+            audio_required = selected_round == "Coding"
+            if audio_required:
+                st.session_state.audio_checkbox = True
+                st.session_state.audio_mode_enabled = True
+                st.checkbox(
+                    "Audio (required for Coding)",
+                    value=True,
+                    key="audio_checkbox",
+                    disabled=True,
+                    help="Coding practice always captures answers from your microphone.",
+                )
+            else:
+                current_audio_pref = st.session_state.get("audio_checkbox", True)
+                audio_pref = st.checkbox("Audio", value=current_audio_pref, key="audio_checkbox")
+                st.session_state.audio_mode_enabled = audio_pref
         
         api_key = get_google_api_key()
         if api_key:

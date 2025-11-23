@@ -16,7 +16,7 @@ def validate_google_api_key(api_key: str) -> None:
         genai.configure(api_key=api_key)
         model = genai.GenerativeModel(model_name=GEMINI_MODEL)
         model.count_tokens("ping")
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         raise RuntimeError(f"GOOGLE_API_KEY validation failed: {exc}") from exc
 
 
@@ -49,5 +49,5 @@ Return only the question text.
                 question += "?"
             return question
         raise RuntimeError("Gemini returned an empty response")
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         raise RuntimeError(f"Gemini question generation failed: {exc}") from exc
