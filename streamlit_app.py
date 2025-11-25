@@ -1,4 +1,3 @@
-import base64
 import os
 from pathlib import Path
 
@@ -29,10 +28,6 @@ def get_google_api_key() -> str | None:
         except OSError:
             pass
     return None
-
-def get_base64_encoded_image(image_path):
-    with open(image_path, "rb") as img_file:
-        return base64.b64encode(img_file.read()).decode('utf-8')
 
 def set_page_config():
     st.set_page_config(

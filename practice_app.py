@@ -1,3 +1,4 @@
+import json
 import os
 import time
 
@@ -10,7 +11,8 @@ from ui_components import (
     display_question,
     display_response_area,
     display_navigation_buttons,
-    display_interview_summary
+    display_interview_summary,
+    get_response_aria_label,
 )
 
 def practice_session(standalone: bool = True):
@@ -124,6 +126,15 @@ def practice_session(standalone: bool = True):
     if interview_finished:
         st.session_state.audio_mode_enabled = False
         st.session_state.audio_checkbox = False
+        total_questions = len(st.session_state.questions)
+        snapshot_answers: dict[int, str] = {}
+        for idx in range(total_questions):
+            widget_key = f"answer_input_{idx}"
+            if widget_key in st.session_state:
+                snapshot_answers[idx] = st.session_state[widget_key]
+            else:
+                snapshot_answers[idx] = st.session_state.answers.get(idx, "")
+        st.session_state.answers.update(snapshot_answers)
         st.markdown(
             """
             <div style="
@@ -147,7 +158,6 @@ def practice_session(standalone: bool = True):
             """,
             unsafe_allow_html=True,
         )
-
         display_interview_summary(st.session_state.questions, st.session_state.answers)
 
         role = st.query_params.get("role", "Software Engineer").lower()
@@ -306,6 +316,7 @@ def practice_session(standalone: bool = True):
     # Display response area and get user input
     current_locked = st.session_state.question_locked.get(st.session_state.current_question_index, False)
     response_container_id = f"response-area-{st.session_state.current_question_index}"
+    widget_key = f"answer_input_{st.session_state.current_question_index}"
     with st.container():
         st.markdown(f'<div id="{response_container_id}">', unsafe_allow_html=True)
         user_response = display_response_area(
@@ -314,6 +325,10 @@ def practice_session(standalone: bool = True):
             disabled=current_locked,
         )
         st.markdown('</div>', unsafe_allow_html=True)
+
+    latest_response = st.session_state.get(widget_key, user_response)
+    st.session_state.answers[st.session_state.current_question_index] = latest_response
+    aria_label = get_response_aria_label(st.session_state.current_question_index)
 
     audio_enabled = bool(
         st.session_state.get(
@@ -337,44 +352,82 @@ def practice_session(standalone: bool = True):
         f"""
         <script>
         (function() {{
-            const container = document.getElementById('{response_container_id}');
-            if (!container) return;
-            const textarea = container.querySelector('textarea');
+            const containerId = '{response_container_id}';
+            const ariaLabel = {json.dumps(aria_label)};
+            const container = document.getElementById(containerId);
+            let textarea = null;
             let isLocked = Boolean({1 if current_locked else 0});
             const audioOnly = Boolean({1 if audio_only_mode else 0});
+
+            const pickVisible = (elements) => {{
+                if (!elements || !elements.length) return null;
+                for (const element of elements) {{
+                    if (element && element.offsetParent !== null) {{
+                        return element;
+                    }}
+                }}
+                return elements[0] || null;
+            }};
+
+            const findTextarea = () => {{
+                if (textarea && document.body.contains(textarea)) {{
+                    return textarea;
+                }}
+
+                const candidates = [
+                    container ? container.querySelector('textarea') : null,
+                    ...Array.from(document.querySelectorAll(`textarea[aria-label="${{ariaLabel}}"]`)),
+                    ...Array.from(document.querySelectorAll('textarea[placeholder="Type your answer here..."]')),
+                    ...Array.from(document.querySelectorAll('textarea')),
+                ].filter(Boolean);
+
+                const nextMatch = pickVisible(candidates);
+                if (nextMatch) {{
+                    textarea = nextMatch;
+                }}
+                return textarea;
+            }};
+
             const syncValue = (value) => {{
-                if (!textarea) return;
-                textarea.value = value || '';
-                textarea.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                const target = findTextarea();
+                if (!target) return;
+                target.value = value || '';
+                target.dispatchEvent(new Event('input', {{ bubbles: true }}));
             }};
+
             const lockTextarea = () => {{
-                if (!textarea) return;
+                const target = findTextarea();
+                if (!target) return;
                 isLocked = true;
-                textarea.setAttribute('readonly', 'true');
-                textarea.setAttribute('disabled', 'true');
-                textarea.classList.add('response-locked');
-                textarea.blur();
+                target.setAttribute('readonly', 'true');
+                target.setAttribute('disabled', 'true');
+                target.classList.add('response-locked');
+                target.blur();
             }};
+
             const enforceAudioOnly = () => {{
-                if (!textarea || isLocked) return;
+                const target = findTextarea();
+                if (!target || isLocked) return;
                 if (audioOnly) {{
-                    textarea.setAttribute('readonly', 'true');
-                    textarea.classList.add('response-audio-only');
+                    target.setAttribute('readonly', 'true');
+                    target.classList.add('response-audio-only');
                 }} else {{
-                    textarea.removeAttribute('readonly');
-                    textarea.classList.remove('response-audio-only');
+                    target.removeAttribute('readonly');
+                    target.classList.remove('response-audio-only');
                 }}
             }};
+
             if (isLocked) {{
                 lockTextarea();
             }} else {{
                 enforceAudioOnly();
             }}
+
             window.addEventListener('message', (event) => {{
                 if (event?.data?.type === 'timer-lock' && event.data.index === {st.session_state.current_question_index}) {{
                     lockTextarea();
                 }}
-                if (event?.data?.type === 'audio-transcript' && event.data.targetId === '{response_container_id}') {{
+                if (event?.data?.type === 'audio-transcript' && event.data.targetId === containerId) {{
                     syncValue(event.data.value || '');
                     enforceAudioOnly();
                 }}
@@ -386,10 +439,6 @@ def practice_session(standalone: bool = True):
     )
     if current_locked:
         st.info("✋ Time is up for this question. Use navigation to move on.")
-    
-    # Update answer in session state
-    if user_response != current_answer:
-        st.session_state.answers[st.session_state.current_question_index] = user_response
     
     # Handle navigation buttons
     prev_clicked, next_clicked, new_question_clicked, finish_clicked = display_navigation_buttons(

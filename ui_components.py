@@ -1,5 +1,10 @@
 import streamlit as st
 
+def get_response_aria_label(question_index: int) -> str:
+    """Return a stable aria-label for a question's response box."""
+
+    return f"Answer for question {question_index + 1}"
+
 def display_question(question: str, current_index: int, total_questions: int) -> None:
 
     # Display question counter and current question
@@ -15,13 +20,15 @@ def display_question(question: str, current_index: int, total_questions: int) ->
 def display_response_area(question_index: int, current_answer: str = "", *, disabled: bool = False) -> str:
 
     st.markdown("### Your Response")
+    aria_label = get_response_aria_label(question_index)
     response = st.text_area(
-        "Type your answer here...",
+        aria_label,
         value=current_answer,
         height=200,
         key=f"answer_input_{question_index}",
         label_visibility="collapsed",
-        disabled=disabled
+        placeholder="Type your answer here...",
+        disabled=disabled,
     )
     return response
 
@@ -60,13 +67,7 @@ def display_navigation_buttons(current_index: int, total_questions: int) -> tupl
     return prev_clicked, next_clicked, new_question_clicked, finish_clicked
 
 def display_interview_summary(questions: list, answers: dict) -> None:
-    """
-    Display the interview summary with all questions and answers.
-    
-    Args:
-        questions: List of all interview questions
-        answers: Dictionary mapping question indices to answers
-    """
+   
     st.success("🎉 Great job on completing the interview!")
     st.write("### Interview Summary")
     
