@@ -31,15 +31,19 @@ def render_audio_input_panel(
                     border: 1px solid #e5e7eb;
                     border-radius: 10px;
                     padding: 16px;
-                    margin-top: 12px;
+                    margin: 12px 0 0 0;
                     background: #f9fafb;
                     font-family: 'Source Sans Pro', 'Segoe UI', system-ui;
+                    width: 100%;
+                    max-width: 100%;
+                    box-sizing: border-box;
                 }}
                 #{panel_dom_id} .audio-panel__header {{
                     display: flex;
                     align-items: center;
                     justify-content: space-between;
                     gap: 12px;
+                    margin-bottom: 8px;
                 }}
                 #{panel_dom_id} .audio-panel__title {{
                     font-size: 0.95rem;
@@ -67,14 +71,15 @@ def render_audio_input_panel(
                 }}
                 #{panel_dom_id} textarea {{
                     width: 100%;
-                    min-height: 90px;
-                    margin-top: 12px;
+                    min-height: 80px;
+                    margin: 0;
                     padding: 10px;
                     border-radius: 8px;
                     border: 1px solid #d1d5db;
                     resize: vertical;
                     font-size: 0.95rem;
                     font-family: inherit;
+                    box-sizing: border-box;
                 }}
             </style>
             <div class="audio-panel__header">

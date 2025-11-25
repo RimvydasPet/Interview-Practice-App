@@ -10,26 +10,100 @@ def display_question(question: str, current_index: int, total_questions: int) ->
     # Display question counter and current question
     st.markdown(f"**Question {current_index + 1} of {total_questions}**")
     
-    # Display the question in a styled box with better contrast
+    # Display the question in a styled box matching countdown dimensions
     st.markdown(
-        f'<div class="question-box" style="color: #333333; font-size: 1.1em;">'
-        f'{question}</div>', 
+        f'<div class="question-box" style="'
+        'display: flex; '
+        'flex-direction: column; '
+        'gap: 2px; '
+        'align-items: center; '
+        'justify-content: center; '
+        'padding: 8px 12px; '
+        'border: 1px solid #e5e7eb; '
+        'border-radius: 8px; '
+        'background: #fff; '
+        'box-shadow: 0 2px 4px rgba(0,0,0,0.05); '
+        'font-family: "Source Sans Pro", "Segoe UI", system-ui; '
+        'margin: 1rem 0; '
+        'min-width: 100px;'
+        '\">'  # Escaped the closing quote and angle bracket
+        f'<div style="font-size: 0.9rem; color: #6b7280;">Question {current_index + 1} of {total_questions}</div>'
+        f'<div style="font-size: 1.1rem; font-weight: 600; color: #333333; text-align: center;">{question}</div>'
+        '</div>', 
         unsafe_allow_html=True
     )
 
-def display_response_area(question_index: int, current_answer: str = "", *, disabled: bool = False) -> str:
-
-    st.markdown("### Your Response")
+def display_response_area(
+    question_index: int,
+    current_answer: str = "",
+    *,
+    disabled: bool = False,
+    hidden: bool = False,
+) -> str:
+    """Display a response area that can be hidden when in audio mode.
+    
+    Args:
+        question_index: Index of the current question
+        current_answer: Current answer text to display
+        disabled: Whether the input should be disabled
+        hidden: Whether to hide the text area (for audio mode)
+        
+    Returns:
+        The user's response text
+    """
     aria_label = get_response_aria_label(question_index)
+    widget_key = f"answer_input_{question_index}"
+    
+    # Only show the response header when not hidden
+    if not hidden:
+        st.markdown("### Your Response")
+    
+    # Add a hidden indicator for screen readers when in audio mode
+    if hidden:
+        st.markdown(
+            '<div class="sr-only-response" aria-live="polite">Audio mode is active; text input is hidden.</div>',
+            unsafe_allow_html=True,
+        )
+    
+    # Create the text area with a valid height
+    # We'll hide it completely with CSS if needed
     response = st.text_area(
         aria_label,
         value=current_answer,
-        height=200,
-        key=f"answer_input_{question_index}",
+        height=200,  # Always use a valid height
+        key=widget_key,
         label_visibility="collapsed",
-        placeholder="Type your answer here...",
-        disabled=disabled,
+        placeholder="Type your answer here..." if not hidden else "",
+        disabled=disabled or hidden,
     )
+    
+    # Apply CSS to hide the text area when in audio mode
+    if hidden:
+        st.markdown(
+            f"""
+            <style>
+                [data-testid="stTextArea"][aria-label="{aria_label}"] {{
+                    display: none !important;
+                }}
+                textarea[aria-label="{aria_label}"] {{
+                    display: none !important;
+                }}
+                .sr-only-response {{
+                    position: absolute;
+                    width: 1px;
+                    height: 1px;
+                    padding: 0;
+                    margin: -1px;
+                    overflow: hidden;
+                    clip: rect(0, 0, 0, 0);
+                    white-space: nowrap;
+                    border: 0;
+                }}
+            </style>
+            """,
+            unsafe_allow_html=True,
+        )
+
     return response
 
 def display_navigation_buttons(current_index: int, total_questions: int) -> tuple[bool, bool, bool, bool]:

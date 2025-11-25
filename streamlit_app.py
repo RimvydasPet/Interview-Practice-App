@@ -5,7 +5,7 @@ import streamlit as st
 from dotenv import load_dotenv
 
 from interview_flow import handle_practice_navigation
-from llm_utils import validate_google_api_key
+from llm_utils import DEFAULT_GENERATION_CONFIG, validate_google_api_key
 
 DOTENV_PATH = Path(__file__).resolve().parent / ".env"
 load_dotenv(dotenv_path=DOTENV_PATH, override=False)
@@ -142,17 +142,64 @@ def main():
                 current_audio_pref = st.session_state.get("audio_checkbox", True)
                 audio_pref = st.checkbox("Audio", value=current_audio_pref, key="audio_checkbox")
                 st.session_state.audio_mode_enabled = audio_pref
+
+        if "generation_config" not in st.session_state:
+            st.session_state.generation_config = DEFAULT_GENERATION_CONFIG.copy()
+        generation_config = st.session_state.generation_config
+
+        with st.expander("LLM Generation Settings", expanded=False):
+            st.caption(
+                "Tune how creative or focused Gemini should be while crafting interview questions."
+            )
+            col_a, col_b = st.columns(2)
+            with col_a:
+                generation_config["temperature"] = st.slider(
+                    "Temperature",
+                    min_value=0.3,
+                    max_value=1.0,
+                    step=0.05,
+                    value=float(generation_config.get("temperature", 0.75)),
+                    help="0.6–0.9 recommended. Higher = more creative interviewer styles.",
+                )
+                generation_config["top_k"] = st.slider(
+                    "Top-k",
+                    min_value=1,
+                    max_value=128,
+                    step=1,
+                    value=int(generation_config.get("top_k", 40)),
+                    help="Lower values keep answers focused; higher values sample from a wider vocabulary.",
+                )
+            with col_b:
+                generation_config["top_p"] = st.slider(
+                    "Top-p",
+                    min_value=0.5,
+                    max_value=1.0,
+                    step=0.05,
+                    value=float(generation_config.get("top_p", 0.9)),
+                    help="0.8–1.0 keeps follow-ups diverse without going off-topic.",
+                )
+                generation_config["max_output_tokens"] = st.slider(
+                    "Max Tokens",
+                    min_value=128,
+                    max_value=768,
+                    step=32,
+                    value=int(generation_config.get("max_output_tokens", 384)),
+                    help="256–512 suits most interviews; raise for longer answers.",
+                )
         
         api_key = get_google_api_key()
         if api_key:
             cached_key = st.session_state.get("validated_api_key")
             try:
                 if cached_key != api_key:
-                    validate_google_api_key(api_key)
+                    validate_google_api_key(
+                        api_key,
+                        generation_config=st.session_state.generation_config,
+                    )
                     st.session_state.validated_api_key = api_key
                 st.success("API key loaded from environment (.env file or shell). You're ready to call external services.")
                 st.session_state.google_api_key = api_key
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc: 
                 api_key_validation_error = str(exc)
                 api_key = None
                 st.error(f"Invalid API key: {api_key_validation_error}")

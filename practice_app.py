@@ -5,7 +5,7 @@ import time
 import streamlit as st
 import streamlit.components.v1 as components
 
-from llm_utils import generate_question
+from llm_utils import DEFAULT_GENERATION_CONFIG, generate_question
 from audio_input import render_audio_input_panel
 from ui_components import (
     display_question,
@@ -82,6 +82,10 @@ def practice_session(standalone: bool = True):
             default_audio = True if audio_required else False
         st.session_state.audio_checkbox = bool(default_audio)
     
+    # Ensure generation settings exist even when running standalone
+    if "generation_config" not in st.session_state:
+        st.session_state.generation_config = DEFAULT_GENERATION_CONFIG.copy()
+
     # Initialize questions and answers if not exists
     if 'questions' not in st.session_state:
         st.session_state.questions = []
@@ -104,7 +108,8 @@ def practice_session(standalone: bool = True):
                     round_type=round_type,
                     difficulty=difficulty,
                     previous_questions=st.session_state.questions,
-                    api_key=api_key
+                    api_key=api_key,
+                    generation_config=st.session_state.generation_config,
                 )
                 st.session_state.questions.append(question)
         st.session_state.question_timers = {}
@@ -243,15 +248,16 @@ def practice_session(standalone: bool = True):
         <div id=\"{timer_dom_id}\" style=\"
             display:flex;
             flex-direction:column;
-            gap:4px;
+            gap:2px;
             align-items:center;
             justify-content:center;
-            padding:12px 16px;
+            padding:8px 12px;
             border:1px solid #e5e7eb;
-            border-radius:10px;
+            border-radius:8px;
             background:#fff;
-            box-shadow:0 3px 8px rgba(0,0,0,0.05);
+            box-shadow:0 2px 4px rgba(0,0,0,0.05);
             font-family:'Source Sans Pro', 'Segoe UI', system-ui;
+            min-width: 100px;
         \">
             <span style=\"font-size:0.9rem;color:#6b7280;\">Question Countdown</span>
             <div class=\"timer-watch__value\" style=\"font-size:1.8rem;font-weight:700;color:#6C63FF;\">
@@ -317,19 +323,9 @@ def practice_session(standalone: bool = True):
     current_locked = st.session_state.question_locked.get(st.session_state.current_question_index, False)
     response_container_id = f"response-area-{st.session_state.current_question_index}"
     widget_key = f"answer_input_{st.session_state.current_question_index}"
-    with st.container():
-        st.markdown(f'<div id="{response_container_id}">', unsafe_allow_html=True)
-        user_response = display_response_area(
-            st.session_state.current_question_index,
-            current_answer,
-            disabled=current_locked,
-        )
-        st.markdown('</div>', unsafe_allow_html=True)
-
-    latest_response = st.session_state.get(widget_key, user_response)
-    st.session_state.answers[st.session_state.current_question_index] = latest_response
-    aria_label = get_response_aria_label(st.session_state.current_question_index)
-
+    
+    # Get audio mode state
+    audio_mode = st.session_state.get("audio_mode_enabled", st.session_state.get("audio_checkbox", False))
     audio_enabled = bool(
         st.session_state.get(
             "audio_mode_enabled",
@@ -337,16 +333,43 @@ def practice_session(standalone: bool = True):
         )
     )
     audio_only_mode = audio_enabled
-    if audio_enabled and not current_locked:
-        render_audio_input_panel(
-            response_container_id,
-            title="Prefer speaking? We'll transcribe in real time",
-            initial_text=user_response,
+
+    # Main response area container
+    with st.container():
+        # Response area (text input or hidden when in audio mode)
+        st.markdown(f'<div id="{response_container_id}">', unsafe_allow_html=True)
+        user_response = display_response_area(
+            st.session_state.current_question_index,
+            current_answer,
+            disabled=current_locked,
+            hidden=audio_mode and not current_locked,
         )
-    elif audio_enabled and current_locked:
-        st.info("🎧 Audio capture disabled because this question is locked. Use navigation to continue.")
-    if audio_only_mode and not current_locked:
-        st.info("🎙️ Audio mode is enabled. Answers are captured from your microphone only.")
+        st.markdown('</div>', unsafe_allow_html=True)
+
+        # Add some spacing before audio controls
+        st.markdown('<div style="margin-top: 1rem;"></div>', unsafe_allow_html=True)
+
+        # Audio input panel
+        if audio_enabled and not current_locked:
+            render_audio_input_panel(
+                response_container_id,
+                title="Prefer speaking? We'll transcribe in real time",
+                initial_text=user_response,
+            )
+        elif audio_enabled and current_locked:
+            st.info("🎧 Audio capture disabled because this question is locked. Use navigation to continue.")
+        
+        # Audio mode indicator
+        if audio_only_mode and not current_locked:
+            st.info("🎙️ Audio mode is enabled. Answers are captured from your microphone only.")
+    
+    # Get the latest response after potential audio updates
+    latest_response = st.session_state.get(widget_key, user_response)
+    st.session_state.answers[st.session_state.current_question_index] = latest_response
+    aria_label = get_response_aria_label(st.session_state.current_question_index)
+    
+    # Add some spacing before navigation
+    st.markdown('<div style="margin-top: 1.5rem;"></div>', unsafe_allow_html=True)
 
     st.markdown(
         f"""
