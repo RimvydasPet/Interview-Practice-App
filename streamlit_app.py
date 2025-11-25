@@ -5,7 +5,14 @@ import streamlit as st
 from dotenv import load_dotenv
 
 from interview_flow import handle_practice_navigation
-from llm_utils import DEFAULT_GENERATION_CONFIG, validate_google_api_key
+from llm_utils import (
+    generate_question,
+    validate_google_api_key,
+    DEFAULT_GENERATION_CONFIG,
+    DEFAULT_SAFETY_SETTINGS,
+    HarmCategory,
+    HarmBlockThreshold,
+)
 
 DOTENV_PATH = Path(__file__).resolve().parent / ".env"
 load_dotenv(dotenv_path=DOTENV_PATH, override=False)
@@ -145,6 +152,10 @@ def main():
 
         if "generation_config" not in st.session_state:
             st.session_state.generation_config = DEFAULT_GENERATION_CONFIG.copy()
+        else:
+            # Update max_output_tokens if it's too low (from old default)
+            if st.session_state.generation_config.get("max_output_tokens", 0) < 1024:
+                st.session_state.generation_config["max_output_tokens"] = DEFAULT_GENERATION_CONFIG["max_output_tokens"]
         generation_config = st.session_state.generation_config
 
         with st.expander("LLM Generation Settings", expanded=False):
@@ -180,12 +191,49 @@ def main():
                 )
                 generation_config["max_output_tokens"] = st.slider(
                     "Max Tokens",
-                    min_value=128,
-                    max_value=768,
-                    step=32,
-                    value=int(generation_config.get("max_output_tokens", 384)),
-                    help="256–512 suits most interviews; raise for longer answers.",
+                    min_value=512,
+                    max_value=4096,
+                    step=128,
+                    value=int(generation_config.get("max_output_tokens", 2048)),
+                    help="1024-2048 recommended for interview questions. Higher values allow longer responses.",
                 )
+        
+        # Safety Settings
+        st.markdown("### Content Safety Settings")
+        st.caption("Configure content safety filters for generated questions.")
+        
+        if 'safety_settings' not in st.session_state:
+            st.session_state.safety_settings = DEFAULT_SAFETY_SETTINGS
+            
+        # Safety threshold options mapping
+        safety_thresholds = {
+            "Block None": HarmBlockThreshold.BLOCK_NONE,
+            "Block Few": HarmBlockThreshold.BLOCK_ONLY_HIGH,
+            "Block Some": HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
+            "Block Most": HarmBlockThreshold.BLOCK_LOW_AND_ABOVE
+        }
+        
+        # Safety categories to show in UI
+        safety_categories = {
+            "Harassment": HarmCategory.HARM_CATEGORY_HARASSMENT,
+            "Hate Speech": HarmCategory.HARM_CATEGORY_HATE_SPEECH,
+            "Sexually Explicit": HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
+            "Dangerous Content": HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT
+        }
+        
+        # Create a column for each safety category
+        cols = st.columns(len(safety_categories))
+        
+        for i, (category_name, category) in enumerate(safety_categories.items()):
+            with cols[i % len(cols)]:
+                threshold = st.selectbox(
+                    category_name,
+                    options=list(safety_thresholds.keys()),
+                    index=2,  # Default to "Block Some"
+                    key=f"safety_{category_name}",
+                    help=f"Safety threshold for {category_name.lower()} content"
+                )
+                st.session_state.safety_settings[category] = safety_thresholds[threshold]
         
         api_key = get_google_api_key()
         if api_key:
@@ -193,9 +241,10 @@ def main():
             try:
                 if cached_key != api_key:
                     validate_google_api_key(
-                        api_key,
-                        generation_config=st.session_state.generation_config,
-                    )
+                    api_key,
+                    generation_config=st.session_state.generation_config,
+                    safety_settings=st.session_state.safety_settings,
+                )
                     st.session_state.validated_api_key = api_key
                 st.success("API key loaded from environment (.env file or shell). You're ready to call external services.")
                 st.session_state.google_api_key = api_key
@@ -259,7 +308,11 @@ def main():
         from practice_app import practice_session
 
         st.markdown("<div class='section-title'>Practice Session</div>", unsafe_allow_html=True)
-        practice_session(standalone=False)
+        try:
+            practice_session(standalone=False)
+        except Exception as e:
+            st.error(f"An error occurred during the practice session: {str(e)}")
+            st.info("Please check your settings and try again. If the problem persists, try adjusting the content safety settings.")
 
 if __name__ == "__main__":
     main()

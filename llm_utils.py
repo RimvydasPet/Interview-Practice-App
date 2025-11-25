@@ -1,7 +1,8 @@
 import os
-from typing import Optional
+from typing import Optional, Dict, Any, List, Tuple
 
 import google.generativeai as genai
+from google.generativeai.types import HarmCategory, HarmBlockThreshold
 
 DEFAULT_GEMINI_MODEL = "gemini-2.5-pro"
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", DEFAULT_GEMINI_MODEL)
@@ -10,8 +11,17 @@ DEFAULT_GENERATION_CONFIG: dict[str, float | int] = {
     "temperature": 0.75,
     "top_p": 0.9,
     "top_k": 40,
-    "max_output_tokens": 384,
+    "max_output_tokens": 2048,
 }
+
+# Default safety settings - block medium or higher probability of unsafe content
+DEFAULT_SAFETY_SETTINGS = {
+    HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
+    HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
+    HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
+    HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
+}
+
 
 
 def _merge_generation_config(
@@ -29,58 +39,6 @@ def _extract_text_from_candidate(candidate) -> str:
     content = getattr(candidate, "content", None)
     if not content:
         return ""
-
-
-def _build_fallback_question(
-    role: str,
-    company: str,
-    round_type: str,
-    difficulty: str,
-    previous_questions: Optional[list] = None,
-) -> str:
-    normalized_round = (round_type or "").strip().lower()
-    normalized_diff = (difficulty or "").strip().lower()
-    company_label = company.strip() if company else "the company"
-    role_label = role.strip() if role else "this role"
-
-    templates: dict[str, list[str]] = {
-        "coding": [
-            "How would you design a scalable solution to handle real-time data processing for {company_label}?",
-            "Describe your approach to debugging a complex performance issue in production systems.",
-        ],
-        "behavioral": [
-            "Tell me about a time you convinced stakeholders to pursue a different strategy at {company_label}.",
-            "Describe a challenging situation with a teammate and how you resolved it.",
-        ],
-        "warm up": [
-            "What excites you most about joining {company_label} as a {role_label}?",
-            "How do you stay current with industry trends relevant to this opportunity?",
-        ],
-        "role related": [
-            "Walk me through how you would prioritize competing projects as a {role_label} at {company_label}.",
-            "How would you measure success for the {role_label} role within the first 90 days?",
-        ],
-    }
-
-    bank = templates.get(normalized_round) or templates.get("role related")
-    previous = set(previous_questions or [])
-    for template in bank:
-        formatted = template.format(company_label=company_label, role_label=role_label)
-        if formatted not in previous:
-            return formatted if formatted.endswith("?") else f"{formatted}?"
-
-    generic = (
-        f"What would be your strategy for succeeding as a {role_label} at {company_label} "
-        f"during a {round_type or 'practice'} round?"
-    ).strip()
-    return generic if generic.endswith("?") else f"{generic}?"
-    parts = getattr(content, "parts", None) or []
-    snippets: list[str] = []
-    for part in parts:
-        text = getattr(part, "text", None)
-        if text:
-            snippets.append(text.strip())
-    return "\n".join(filter(None, snippets)).strip()
 
 
 def _extract_text_from_response(response) -> str:
@@ -107,6 +65,7 @@ def _extract_text_from_response(response) -> str:
 def validate_google_api_key(
     api_key: str,
     generation_config: Optional[dict[str, float | int]] = None,
+    safety_settings: Optional[dict] = None,
 ) -> None:
     """Raise if the provided API key fails a lightweight validation call."""
     if not api_key or not api_key.strip():
@@ -116,9 +75,11 @@ def validate_google_api_key(
         genai.configure(api_key=api_key)
         effective_config = _merge_generation_config(generation_config)
 
+        effective_safety = safety_settings or DEFAULT_SAFETY_SETTINGS
         model = genai.GenerativeModel(
             model_name=GEMINI_MODEL,
             generation_config=effective_config,
+            safety_settings=effective_safety,
         )
         model.count_tokens("ping")
     except Exception as exc:
@@ -133,57 +94,109 @@ def generate_question(
     previous_questions: Optional[list] = None,
     api_key: str | None = None,
     generation_config: Optional[dict[str, float | int]] = None,
+    safety_settings: Optional[dict] = None,
 ) -> str:
+    # Debug: Print the API key status (first few characters for security)
+    print(f"API Key provided: {'Yes' if api_key else 'No'}")
+    if api_key:
+        print(f"API Key starts with: {api_key[:5]}...")
 
     if not api_key:
-        raise ValueError("GOOGLE_API_KEY missing. Provide it via .env before generating questions.")
+        raise ValueError("GOOGLE_API_KEY missing. Please provide it via the .env file or settings.")
 
     # Generate using Gemini
     try:
+        # Configure the API
         genai.configure(api_key=api_key)
         effective_config = _merge_generation_config(generation_config)
+        effective_safety = safety_settings or DEFAULT_SAFETY_SETTINGS
+        
+        # Initialize the model
         model = genai.GenerativeModel(
             model_name=GEMINI_MODEL,
             generation_config=effective_config,
+            safety_settings=effective_safety,
         )
+        
+        # Prepare the prompt
         prior_list = "\n".join(f"- {q}" for q in (previous_questions or [])) or "None"
         prompt = f"""
-You are acting as an expert interview coach. Craft one concise and challenging interview question.
+You are an expert interview coach. Generate a single, focused interview question based on the following:
+
 Role: {role}
-Company: {company or 'N/A'}
+Company: {company or 'a company'}
 Round: {round_type}
 Difficulty: {difficulty}
-Previously asked questions:
+
+Previously asked questions (do not repeat these):
 {prior_list}
 
-Return only the question text.
-"""
+Generate exactly ONE interview question. The question should be challenging and relevant to the role and company.
+
+Question: """
+            
+        print("Sending request to Gemini API...")
         response = model.generate_content(prompt)
+        print(f"Received response: {response}")
+        
         question = _extract_text_from_response(response)
+        print(f"Extracted question: {question}")
+        
+        # Return the question if we got one
         if question:
+            # Clean up the question
+            question = question.strip()
             if not question.endswith("?"):
                 question += "?"
+                
+            print(f"Returning generated question: {question}")
             return question
-        finish_reasons = ", ".join(
-            filter(
-                None,
-                [
-                    str(getattr(candidate, "finish_reason", ""))
-                    for candidate in getattr(response, "candidates", [])
-                ],
+        # Get detailed error information
+        finish_reasons = []
+        for candidate in getattr(response, "candidates", []):
+            finish_reason = getattr(candidate, "finish_reason", "")
+            if finish_reason:
+                finish_reasons.append(str(finish_reason))
+                
+            # Check for safety ratings
+            safety_ratings = getattr(candidate, "safety_ratings", [])
+            for rating in safety_ratings:
+                if getattr(rating, "blocked", False):
+                    finish_reasons.append(f"BLOCKED: {getattr(rating, 'category', 'Unknown')}")
+        
+        finish_reason_str = ", ".join(finish_reasons) if finish_reasons else "No finish reason provided"
+        print(f"Generation failed. Finish reasons: {finish_reason_str}")
+        
+        # Check for MAX_TOKENS issue
+        if "MAX_TOKENS" in finish_reason_str.upper() or "2" in finish_reason_str:
+            print("Hit max tokens limit")
+            raise RuntimeError(
+                "Response exceeded token limit. "
+                "Try increasing 'Max Tokens' in the LLM Generation Settings (recommended: 1024-2048)."
             )
-        )
-        if "2" in finish_reasons or "SAFETY" in finish_reasons.upper():
-            return _build_fallback_question(
-                role=role,
-                company=company,
-                round_type=round_type,
-                difficulty=difficulty,
-                previous_questions=previous_questions,
+        
+        # If we have safety issues, provide clear guidance
+        if any(r in finish_reason_str.upper() for r in ["SAFETY", "BLOCKED"]):
+            print("Content blocked by safety filters")
+            raise RuntimeError(
+                "Content blocked by Gemini safety filters. "
+                "Try adjusting your safety settings to 'Block None' or 'Block Few' in the app settings."
             )
+            
+        # For other errors, provide more detailed information
+        error_details = {
+            "role": role,
+            "company": company,
+            "round_type": round_type,
+            "difficulty": difficulty,
+            "finish_reasons": finish_reasons,
+            "prompt_preview": prompt[:200] + "..." if len(prompt) > 200 else prompt
+        }
+        print(f"Error details: {error_details}")
+        
         raise RuntimeError(
-            "Gemini returned an empty response"
-            + (f" (finish reasons: {finish_reasons})" if finish_reasons else "")
+            "Gemini returned an empty or invalid response. "
+            f"Finish reasons: {finish_reason_str}"
         )
     except Exception as exc:
         raise RuntimeError(f"Gemini question generation failed: {exc}") from exc

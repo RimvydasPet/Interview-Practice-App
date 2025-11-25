@@ -5,7 +5,14 @@ import time
 import streamlit as st
 import streamlit.components.v1 as components
 
-from llm_utils import DEFAULT_GENERATION_CONFIG, generate_question
+from llm_utils import (
+    generate_question, 
+    validate_google_api_key, 
+    HarmCategory, 
+    HarmBlockThreshold, 
+    DEFAULT_SAFETY_SETTINGS,
+    DEFAULT_GENERATION_CONFIG
+)
 from audio_input import render_audio_input_panel
 from ui_components import (
     display_question,
@@ -22,6 +29,24 @@ def practice_session(standalone: bool = True):
             page_icon="🎤",
             layout="centered"
         )
+    
+    # Initialize session state variables if they don't exist
+    required_state = {
+        'questions': [],
+        'current_question_index': 0,
+        'answers': {},
+        'question_timers': {},
+        'question_locked': {},
+        'safety_settings': DEFAULT_SAFETY_SETTINGS.copy(),
+        'generation_config': DEFAULT_GENERATION_CONFIG.copy(),
+        'initialized': True,
+        'google_api_key': st.session_state.get('google_api_key', '')
+    }
+    
+    # Initialize any missing session state variables
+    for key, default_value in required_state.items():
+        if key not in st.session_state:
+            st.session_state[key] = default_value
     
     st.markdown("""
         <style>
@@ -82,36 +107,68 @@ def practice_session(standalone: bool = True):
             default_audio = True if audio_required else False
         st.session_state.audio_checkbox = bool(default_audio)
     
-    # Ensure generation settings exist even when running standalone
-    if "generation_config" not in st.session_state:
-        st.session_state.generation_config = DEFAULT_GENERATION_CONFIG.copy()
-
-    # Initialize questions and answers if not exists
-    if 'questions' not in st.session_state:
-        st.session_state.questions = []
-        st.session_state.current_question_index = 0
-        st.session_state.answers = {}
-        st.session_state.question_timers = {}
-        st.session_state.question_locked = {}
-
     # Resolve API key (session first, then environment)
     api_key = st.session_state.get('google_api_key') or os.getenv('GOOGLE_API_KEY')
 
     # Generate questions if we don't have any yet
     if not st.session_state.questions:
-        with st.spinner("Preparing your interview questions..."):
-            # Generate 5 questions for this interview
-            for _ in range(5):
+        # Create a container for the loading message
+        loading_placeholder = st.empty()
+        
+        try:
+            # Show initial loading message
+            with loading_placeholder.container():
+                st.info("🔄 Preparing your interview questions...")
+                progress_bar = st.progress(0)
+            
+            # Generate questions
+            questions = []
+            for i in range(5):
+                # Update progress
+                progress = (i + 1) / 5
+                with loading_placeholder.container():
+                    st.info(f"🔄 Generating question {i+1} of 5...")
+                    progress_bar.progress(progress)
+                
                 question = generate_question(
                     role=role,
                     company=company,
                     round_type=round_type,
                     difficulty=difficulty,
-                    previous_questions=st.session_state.questions,
+                    previous_questions=questions,  # Use the local questions list
                     api_key=api_key,
                     generation_config=st.session_state.generation_config,
+                    safety_settings=st.session_state.safety_settings,
                 )
-                st.session_state.questions.append(question)
+                questions.append(question)
+            
+            # Store all questions in session state at once
+            st.session_state.questions = questions
+            
+            # Clear the loading message
+            loading_placeholder.empty()
+            
+            # Rerun to show the first question
+            st.rerun()
+            
+        except ValueError as e:
+            loading_placeholder.empty()
+            st.error(f"❌ Content safety violation: {str(e)}")
+            st.info("Please adjust your safety settings or try again.")
+            st.session_state.questions = []  # Reset questions
+            st.stop()
+            
+        except Exception as e:
+            loading_placeholder.empty()
+            error_msg = str(e).lower()
+            if "api key" in error_msg or "api_key" in error_msg or "finish reasons: 3" in error_msg:
+                st.error("❌ API Error: Invalid or missing Google API key")
+                st.info("Please check your API key in the settings and try again.")
+            else:
+                st.error(f"❌ An error occurred while generating questions: {str(e)}")
+            st.session_state.questions = []  # Reset questions
+            st.stop()
+            
         st.session_state.question_timers = {}
 
     round_key = round_type.lower()
@@ -302,8 +359,13 @@ def practice_session(standalone: bool = True):
             st.session_state.question_locked[current_index] = True
             st.warning("Time's up for this question. Move to the next one when you're ready.")
 
-    # Get current question
-    current_question = st.session_state.questions[st.session_state.current_question_index] if st.session_state.questions else "No questions available"
+    # Display the current question with safety check
+    try:
+        current_question = st.session_state.questions[st.session_state.current_question_index]
+        st.markdown(f'<div class="question">{current_question}</div>', unsafe_allow_html=True)
+    except IndexError:
+        st.error("No questions available. Please check your settings and try again.")
+        return
     
     # Display current question and response area
     display_question(

@@ -12,24 +12,26 @@ def display_question(question: str, current_index: int, total_questions: int) ->
     
     # Display the question in a styled box matching countdown dimensions
     st.markdown(
-        f'<div class="question-box" style="'
-        'display: flex; '
-        'flex-direction: column; '
-        'gap: 2px; '
-        'align-items: center; '
-        'justify-content: center; '
-        'padding: 8px 12px; '
-        'border: 1px solid #e5e7eb; '
-        'border-radius: 8px; '
-        'background: #fff; '
-        'box-shadow: 0 2px 4px rgba(0,0,0,0.05); '
-        'font-family: "Source Sans Pro", "Segoe UI", system-ui; '
-        'margin: 1rem 0; '
-        'min-width: 100px;'
-        '\">'  # Escaped the closing quote and angle bracket
-        f'<div style="font-size: 0.9rem; color: #6b7280;">Question {current_index + 1} of {total_questions}</div>'
-        f'<div style="font-size: 1.1rem; font-weight: 600; color: #333333; text-align: center;">{question}</div>'
-        '</div>', 
+        f'''
+        <div class="question-box" style="
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            align-items: center;
+            justify-content: center;
+            padding: 8px 12px;
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            background: #fff;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+            font-family: 'Source Sans Pro', 'Segoe UI', system-ui;
+            margin: 1rem 0;
+            min-width: 100px;
+        ">
+            <div style="font-size: 0.9rem; color: #6b7280;">Question {current_index + 1} of {total_questions}</div>
+            <div style="font-size: 1.1rem; font-weight: 600; color: #333333; text-align: center;">{question}</div>
+        </div>
+        ''',
         unsafe_allow_html=True
     )
 
