@@ -11,7 +11,7 @@ DEFAULT_GENERATION_CONFIG: dict[str, float | int] = {
     "temperature": 0.75,
     "top_p": 0.9,
     "top_k": 40,
-    "max_output_tokens": 2048,
+    "max_output_tokens": 3000,  # Increased from 2048 to handle longer responses
 }
 
 # Default safety settings - block medium or higher probability of unsafe content

@@ -301,7 +301,9 @@ def practice_session(standalone: bool = True):
         remaining_seconds = remaining % 60
 
         timer_dom_id = f"countdown-watch-{current_index}-{int(question_start_time)}"
-        timer_html = f"""
+        
+        # Build timer HTML with conditional script
+        timer_value_html = f"""
         <div id=\"{timer_dom_id}\" style=\"
             display:flex;
             flex-direction:column;
@@ -320,8 +322,11 @@ def practice_session(standalone: bool = True):
             <div class=\"timer-watch__value\" style=\"font-size:1.8rem;font-weight:700;color:#6C63FF;\">
                 {remaining_minutes:02d}:{remaining_seconds:02d}
             </div>
-        </div>
-        {"" if remaining <= 0 else f"""<script>
+        </div>"""
+        
+        # Only add script if remaining time > 0
+        if remaining > 0:
+            timer_script = f"""<script>
         (function() {{
             const container = document.getElementById('{timer_dom_id}');
             if (!container) return;
@@ -352,8 +357,11 @@ def practice_session(standalone: bool = True):
                 }}
             }}, 1000);
         }})();
-        </script>"""}
-        """
+        </script>"""
+            timer_html = timer_value_html + timer_script
+        else:
+            timer_html = timer_value_html
+        
         components.html(timer_html, height=110, scrolling=False)
         if remaining == 0:
             st.session_state.question_locked[current_index] = True

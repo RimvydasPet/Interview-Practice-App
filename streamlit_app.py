@@ -18,6 +18,10 @@ DOTENV_PATH = Path(__file__).resolve().parent / ".env"
 load_dotenv(dotenv_path=DOTENV_PATH, override=False)
 
 def get_google_api_key() -> str | None:
+    # Check session state first (user-provided API key)
+    if 'user_api_key' in st.session_state and st.session_state.user_api_key:
+        return st.session_state.user_api_key.strip()
+    
     load_dotenv(dotenv_path=DOTENV_PATH, override=True)
     key = os.getenv("GOOGLE_API_KEY")
     if key:
@@ -62,6 +66,9 @@ def main():
         st.session_state.role = ""
     if 'company' not in st.session_state:
         st.session_state.company = ""
+    if 'user_api_key' not in st.session_state:
+        st.session_state.user_api_key = ""
+        
     practice_mode_active = handle_practice_navigation()
 
     # Defaults when practice session is already running
@@ -70,6 +77,23 @@ def main():
     api_key_available = False
 
     if not practice_mode_active:
+        # API Key Input Section (at the top)
+        st.markdown('<div class="section-title">API Key</div>', unsafe_allow_html=True)
+        st.markdown('Get a Google API key from [Google AI Studio](https://aistudio.google.com/app/apikey)')
+        
+        user_api_key = st.text_input(
+            "Paste your Google API Key here",
+            value=st.session_state.user_api_key,
+            type="password",
+            placeholder="Enter your API key",
+            key="api_key_input",
+            help="Your API key is only stored in this session and never saved to disk."
+        )
+        if user_api_key:
+            st.session_state.user_api_key = user_api_key
+        
+        st.markdown("---")
+        
         # Header with job title and company
         col1, col2 = st.columns([5, 1])
         with col1:
@@ -192,10 +216,10 @@ def main():
                 generation_config["max_output_tokens"] = st.slider(
                     "Max Tokens",
                     min_value=512,
-                    max_value=4096,
+                    max_value=8192,  # Increased from 4096 to 8192
                     step=128,
-                    value=int(generation_config.get("max_output_tokens", 2048)),
-                    help="1024-2048 recommended for interview questions. Higher values allow longer responses.",
+                    value=int(generation_config.get("max_output_tokens", 3000)),  # Updated default
+                    help="1024-3000 recommended for interview questions. Higher values allow longer responses.",
                 )
         
         # Safety Settings
